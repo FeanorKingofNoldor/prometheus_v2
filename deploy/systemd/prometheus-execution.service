@@ -1,0 +1,33 @@
+[Unit]
+Description=Prometheus v2 Daily Execution (IBKR bridge)
+After=network.target postgresql.service prometheus-api.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=prometheus
+Group=prometheus
+WorkingDirectory=/opt/prometheus/prometheus_v2
+EnvironmentFile=/opt/prometheus/prometheus_v2/config/production.env
+
+# Daily execution from target_portfolios to IBKR via run_execution_for_portfolio.
+#
+# NOTE:
+# - Configure IBKR_* and EXEC_RISK_* variables in production.env.
+# - Ensure BOOKS phase has completed and target_portfolios is populated
+#   before this service runs (see engine orchestration docs).
+# - By default we run in PAPER mode; switch to LIVE only after thorough
+#   testing.
+
+ExecStart=/opt/prometheus/prometheus_v2/.venv/bin/python \
+    -m prometheus.scripts.run_execution_for_portfolio \
+    --portfolio-id US_CORE_LONG_EQ \
+    --mode PAPER \
+    --notional 10000
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

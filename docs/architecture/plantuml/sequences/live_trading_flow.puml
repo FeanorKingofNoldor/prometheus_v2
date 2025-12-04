@@ -1,0 +1,256 @@
+@startuml Live Trading - Complete Daily Flow
+
+title Prometheus v2 - Live Trading Flow (US_EQ, Single Day)
+
+actor User
+participant "DAGOrchestrator" as Orch
+participant "TradingCalendar" as Cal
+participant "DataIngestion" as Ingest
+participant "RegimeEngine" as Regime
+participant "StabilityEngine" as Stab
+participant "FragilityAlphaEngine" as Frag
+participant "AssessmentEngine" as Assess
+participant "UniverseEngine" as Univ
+participant "PortfolioEngine" as Port
+participant "OrderPlanner" as Planner
+participant "LiveBroker" as Broker
+participant "IBKR Gateway" as IBKR
+database "historical_db" as HDB
+database "runtime_db" as RDB
+
+== T-1 Day: Market Close ==
+
+Cal -> Orch: get_market_state("US_EQ", now())
+return MarketState.POST_CLOSE
+
+Orch -> Orch: schedule_dag("us_eq_ingest_T")
+activate Orch
+
+Orch -> Ingest: ingest_prices("US_EQ", date=T-1)
+activate Ingest
+Ingest -> HDB: INSERT INTO prices_daily
+Ingest -> HDB: INSERT INTO returns_daily
+return Success
+
+Orch -> Ingest: ingest_text_events(date=T-1)
+Ingest -> HDB: INSERT INTO news_articles
+Ingest -> HDB: INSERT INTO filings
+return Success
+
+deactivate Orch
+
+== T-1 Evening: Feature & Profile Updates ==
+
+Orch -> Orch: schedule_dag("us_eq_features_T-1")
+activate Orch
+
+Orch -> HDB: Compute volatility_daily, factors
+HDB --> Orch: Success
+
+Orch -> HDB: Update profiles for issuers
+HDB --> Orch: ProfileSnapshots updated
+
+deactivate Orch
+
+== T Day Morning: Pre-Open Quality Checks ==
+
+Cal -> Orch: get_market_state("US_EQ", now())
+return MarketState.PRE_OPEN
+
+Orch -> Orch: schedule_dag("us_eq_qc_preopen_T")
+activate Orch
+
+Orch -> HDB: check_data_quality(date=T-1)
+return OK
+
+Orch -> RDB: check_decisions_logged(date=T-1)
+return OK
+
+deactivate Orch
+
+== T Day: Market Session ==
+
+Cal -> Orch: get_market_state("US_EQ", now())
+return MarketState.SESSION
+
+note right: Market trading...\nNo automated actions during session\n(intraday monitors optional)
+
+== T Day: Post-Close - Engine Pipeline ==
+
+Cal -> Orch: get_market_state("US_EQ", now())
+return MarketState.POST_CLOSE
+
+Orch -> Orch: schedule_dag("us_eq_engines_T")
+activate Orch
+
+' === Regime Engine ===
+Orch -> Regime: get_regime(as_of_date=T, region="US")
+activate Regime
+
+Regime -> HDB: read_prices(instruments, start=T-63, end=T)
+return DataFrame
+
+Regime -> Regime: embed_regime_window(market_id="US_EQ", as_of_date=T)
+Regime -> Regime: classify_regime(embedding)
+
+Regime -> RDB: INSERT INTO regimes
+Regime -> RDB: INSERT INTO engine_decisions\n(decision_id, engine="REGIME", ...)
+
+return RegimeState(label="CARRY", confidence=0.85)
+
+' === Stability Engine ===
+Orch -> Stab: compute_stability_batch(entities, as_of_date=T)
+activate Stab
+
+Stab -> RDB: get_profiles(entities, as_of_date=T)
+return List[ProfileSnapshot]
+
+Stab -> Regime: get_regime(as_of_date=T, region="US")
+return RegimeState
+
+Stab -> Stab: _compute_liquidity_score(entity_id, T)
+Stab -> Stab: _compute_volatility_score(entity_id, T)
+Stab -> Stab: _compute_contagion_risk(entity_id, T)
+
+Stab -> RDB: INSERT INTO stability_vectors
+Stab -> RDB: INSERT INTO soft_target_classes
+Stab -> RDB: INSERT INTO engine_decisions
+
+return Dict[entity_id, StabilityVector]
+
+deactivate Stab
+
+' === Fragility Alpha ===
+Orch -> Frag: compute_alpha_batch(entities, as_of_date=T, horizon=21)
+activate Frag
+
+Frag -> Stab: get_stability(entities, as_of_date=T)
+return Dict[entity_id, StabilityVector]
+
+Frag -> Frag: _compute_weak_profile(entity_id, T)
+Frag -> Frag: _compute_complacent_pricing(entity_id, T)
+Frag -> Frag: _combine_signals(...)
+
+Frag -> RDB: INSERT INTO engine_decisions
+return Dict[entity_id, float]
+
+deactivate Frag
+
+' === Assessment Engine ===
+Orch -> Assess: score_strategy_default(strategy_id="main", market_id="US_EQ", as_of_date=T)
+activate Assess
+
+Assess -> Regime: get_regime(as_of_date=T, region="US")
+return RegimeState
+
+Assess -> Frag: get_fragility_alphas(entities, T)
+return Dict[entity_id, float]
+
+Assess -> Assess: _compute_value_alpha(instrument_id, T)
+Assess -> Assess: _compute_momentum_alpha(instrument_id, T)
+Assess -> Assess: _compute_quality_alpha(instrument_id, T)
+Assess -> Assess: _combine_alphas(alphas, regime)
+
+Assess -> RDB: INSERT INTO instrument_scores
+Assess -> RDB: INSERT INTO engine_decisions
+
+return Dict[instrument_id, InstrumentScore]
+
+deactivate Assess
+
+' === Universe Selection ===
+Orch -> Univ: select(strategy_id="main", market_id="US_EQ", as_of_date=T)
+activate Univ
+
+Univ -> Assess: get_scores(strategy="main", market="US_EQ", date=T)
+return Dict[instrument_id, InstrumentScore]
+
+Univ -> Univ: filter_by_liquidity(instruments, min_volume=1M)
+Univ -> Univ: filter_by_constraints(instruments, constraints)
+Univ -> Univ: _assign_tiers(ranked_instruments)
+
+Univ -> RDB: INSERT INTO universes
+Univ -> RDB: INSERT INTO engine_decisions
+
+return Universe(core=[...], satellite=[...], watchlist=[...])
+
+deactivate Univ
+
+' === Portfolio Optimization ===
+Orch -> Port: optimize(strategy_id="main", as_of_date=T, universe, scores)
+activate Port
+
+Port -> HDB: get_correlation_matrix(instruments, window=63)
+return ndarray
+
+Port -> Port: _build_optimization_problem(universe, scores, constraints)
+Port -> Port: _solve_cvxpy(problem)
+Port -> Port: _validate_solution(weights, constraints)
+
+Port -> RDB: INSERT INTO target_portfolios
+Port -> RDB: INSERT INTO portfolio_risk_reports
+Port -> RDB: INSERT INTO engine_decisions
+
+return Dict[instrument_id, target_weight]
+
+deactivate Port
+
+deactivate Orch
+
+== T Day: Order Execution ==
+
+Orch -> Orch: schedule_dag("us_eq_execution_T")
+activate Orch
+
+Orch -> Planner: plan_orders(current_positions, target_positions)
+activate Planner
+
+Planner -> Broker: get_positions()
+return Dict[instrument_id, Position]
+
+Planner -> RDB: read target_portfolios(strategy="main", date=T)
+return Dict[instrument_id, target_weight]
+
+Planner -> Planner: _compute_deltas(current, target)
+
+return List[Order]
+
+deactivate Planner
+
+loop for each order
+    Orch -> Broker: submit_order(order)
+    activate Broker
+    
+    Broker -> Broker: _translate_order(order)
+    Broker -> IBKR: placeOrder(contract, ib_order)
+    activate IBKR
+    return order_id
+    
+    Broker -> RDB: INSERT INTO orders\n(order_id, status="SUBMITTED", mode="LIVE")
+    
+    return order_id
+    
+    deactivate Broker
+end
+
+deactivate Orch
+
+== T Day: Fill Processing (Async) ==
+
+IBKR -> Broker: onFill(fill_event)
+activate Broker
+
+Broker -> Broker: _handle_fill_event(fill_event)
+Broker -> RDB: INSERT INTO fills\n(fill_id, order_id, price, qty, mode="LIVE")
+Broker -> RDB: UPDATE orders SET status="FILLED"
+Broker -> RDB: INSERT INTO positions_snapshots
+
+deactivate Broker
+
+== T+1 Day Morning: Outcome Logging ==
+
+note right: After horizon H days,\nKronos computes decision_outcomes\nfor meta-learning
+
+User -> User: System runs continuously\nDAG orchestrator monitors state\nand triggers next cycle
+
+@enduml

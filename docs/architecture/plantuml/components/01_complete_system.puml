@@ -1,0 +1,508 @@
+@startuml Prometheus v2 - Complete System Components
+
+!define CORE_COLOR #E8F5E9
+!define ENGINE_COLOR #FFEBEE
+!define EXEC_COLOR #E3F2FD
+!define META_COLOR #F3E5F5
+!define DATA_COLOR #FFF3E0
+
+' ============= CORE INFRASTRUCTURE =============
+
+package "prometheus.core" <<Rectangle>> CORE_COLOR {
+    
+    class Config {
+        +load_config(path: str) : Dict
+        +get_engine_config(engine_name: str) : BaseModel
+        +validate_config(config: Dict) : bool
+        --
+        -_resolve_overlays(base: Dict, env: Dict) : Dict
+        -_instantiate_models(config: Dict) : BaseModel
+    }
+    
+    class Database {
+        +get_connection(db_name: str) : Connection
+        +execute_query(query: str, params: Dict) : Result
+        +get_session() : Session
+        --
+        -_create_pool(config: DbConfig) : ConnectionPool
+        -_health_check() : bool
+    }
+    
+    class Logger {
+        +log_info(msg: str, **kwargs)
+        +log_warning(msg: str, **kwargs)
+        +log_error(msg: str, **kwargs)
+        +log_decision(engine: str, decision: Dict)
+        --
+        -_format_message(msg: str, context: Dict) : str
+    }
+    
+    class TradingCalendar {
+        +is_trading_day(market_id: str, date: date) : bool
+        +get_prev_trading_day(market_id: str, date: date, n: int) : date
+        +get_next_trading_day(market_id: str, date: date, n: int) : date
+        +session_open(market_id: str, date: date) : datetime
+        +session_close(market_id: str, date: date) : datetime
+        +get_market_state(market_id: str, now: datetime) : MarketState
+        --
+        -_load_calendar(market_id: str) : Calendar
+        -_is_holiday(market_id: str, date: date) : bool
+    }
+    
+    class IDGenerator {
+        +generate_uuid() : str
+        +generate_order_id() : str
+        +generate_decision_id() : str
+        +generate_context_id(date: date, portfolio: str, strategy: str) : str
+    }
+}
+
+' ============= DATA ACCESS LAYER =============
+
+package "prometheus.data" <<Rectangle>> DATA_COLOR {
+    
+    class DataReader {
+        +read_prices(instrument_ids: List[str], start: date, end: date) : DataFrame
+        +read_returns(instrument_ids: List[str], start: date, end: date) : DataFrame
+        +read_factors(factor_ids: List[str], start: date, end: date) : DataFrame
+        +read_profiles(issuer_ids: List[str], as_of_date: date) : List[ProfileSnapshot]
+        +read_embeddings(entity_ids: List[str], model_id: str, as_of_date: date) : Dict[str, ndarray]
+        --
+        -_build_query(table: str, filters: Dict) : str
+        -_fetch_batch(query: str, batch_size: int) : Iterator[DataFrame]
+    }
+    
+    class FeatureBuilder {
+        +build_returns_windows(prices: DataFrame, windows: List[int]) : DataFrame
+        +build_volatility(returns: DataFrame, windows: List[int]) : DataFrame
+        +build_factor_exposures(returns: DataFrame, factors: DataFrame) : DataFrame
+        +build_correlation_matrix(returns: DataFrame, window: int) : ndarray
+        --
+        -_rolling_window(series: Series, window: int, func: Callable) : Series
+        -_compute_ewma(series: Series, halflife: int) : Series
+    }
+    
+    class DataWriter {
+        +write_prices(df: DataFrame, table: str)
+        +write_embeddings(embeddings: Dict[str, ndarray], model_id: str)
+        +write_engine_output(engine_name: str, output: Dict)
+        --
+        -_validate_schema(df: DataFrame, table: str) : bool
+        -_batch_insert(df: DataFrame, table: str, batch_size: int)
+    }
+}
+
+' ============= ENCODERS & EMBEDDINGS =============
+
+package "prometheus.encoders" <<Rectangle>> DATA_COLOR {
+    
+    class TextEncoder {
+        +encode(texts: List[str]) : ndarray
+        +encode_batch(texts: List[str], batch_size: int) : ndarray
+        +get_embedding_dim() : int
+        --
+        -_preprocess(text: str) : str
+        -_tokenize(text: str) : List[int]
+        -_forward(tokens: Tensor) : Tensor
+    }
+    
+    class NumericWindowEncoder {
+        +embed_window(entity_type: str, entity_id: str, as_of_date: date, window_days: int) : ndarray
+        +embed_batch(entities: List[Tuple], as_of_date: date) : Dict[str, ndarray]
+        +train(data: DataFrame, epochs: int, lr: float)
+        --
+        -_extract_features(entity: str, window: DataFrame) : Tensor
+        -_forward(features: Tensor) : Tensor
+        -_compute_loss(pred: Tensor, target: Tensor) : float
+    }
+    
+    class JointEncoder {
+        +embed_multimodal(numeric_emb: ndarray, text_emb: ndarray) : ndarray
+        +embed_regime_window(market_id: str, as_of_date: date, window_days: int) : ndarray
+        +train_contrastive(pairs: List[Tuple], epochs: int)
+        --
+        -_fusion_layer(emb1: Tensor, emb2: Tensor) : Tensor
+        -_project_to_joint_space(emb: Tensor) : Tensor
+    }
+}
+
+' ============= PROFILES =============
+
+package "prometheus.profiles" <<Rectangle>> DATA_COLOR {
+    
+    class ProfileService {
+        +get_profile(issuer_id: str, as_of_date: date) : ProfileSnapshot
+        +build_profile(issuer_id: str, as_of_date: date) : ProfileSnapshot
+        +update_profiles(issuer_ids: List[str], as_of_date: date)
+        --
+        -_fetch_fundamentals(issuer_id: str, as_of_date: date) : Dict
+        -_compute_risk_flags(fundamentals: Dict) : Dict
+        -_embed_profile(profile: ProfileSnapshot) : ndarray
+    }
+    
+    class ProfileSnapshot <<dataclass>> {
+        +issuer_id: str
+        +as_of_date: date
+        +structured: Dict
+        +embedding: ndarray
+        +risk_flags: Dict
+        +metadata: Dict
+    }
+    
+    class ProfileBuilder {
+        +build_corporate_profile(issuer_id: str, as_of_date: date) : ProfileSnapshot
+        +build_sovereign_profile(issuer_id: str, as_of_date: date) : ProfileSnapshot
+        --
+        -_extract_financials(issuer_id: str) : Dict
+        -_compute_ratios(financials: Dict) : Dict
+    }
+}
+
+' ============= REGIME ENGINE =============
+
+package "prometheus.regime" <<Rectangle>> ENGINE_COLOR {
+    
+    class RegimeEngine {
+        +get_regime(as_of_date: date, region: str) : RegimeState
+        +get_history(start_date: date, end_date: date, region: str) : List[RegimeState]
+        +get_transition_matrix(region: str) : Dict[str, Dict[str, float]]
+        --
+        -_compute_window_embedding(market_id: str, as_of_date: date) : ndarray
+        -_classify_regime(embedding: ndarray) : str
+        -_compute_confidence(embedding: ndarray, regime: str) : float
+    }
+    
+    class RegimeState <<dataclass>> {
+        +as_of_date: date
+        +region: str
+        +regime_label: str
+        +regime_embedding: ndarray
+        +confidence: float
+        +metadata: Dict
+    }
+    
+    class RegimeClassifier {
+        +predict(embedding: ndarray) : Tuple[str, float]
+        +train_clusters(embeddings: ndarray, n_clusters: int)
+        --
+        -_kmeans_fit(X: ndarray, k: int) : KMeans
+        -_assign_cluster(embedding: ndarray) : int
+    }
+}
+
+' ============= STABILITY & SOFT-TARGET ENGINE =============
+
+package "prometheus.stability" <<Rectangle>> ENGINE_COLOR {
+    
+    class StabilityEngine {
+        +compute_stability(entity_type: str, entity_id: str, as_of_date: date) : StabilityVector
+        +compute_soft_target_class(entity_id: str, as_of_date: date) : SoftTargetClass
+        +run_scenario_analysis(entity_id: str, scenarios: List[Scenario]) : Dict[str, float]
+        --
+        -_compute_liquidity_score(entity_id: str, as_of_date: date) : float
+        -_compute_volatility_score(entity_id: str, as_of_date: date) : float
+        -_compute_contagion_risk(entity_id: str, as_of_date: date) : float
+    }
+    
+    class StabilityVector <<dataclass>> {
+        +entity_type: str
+        +entity_id: str
+        +as_of_date: date
+        +liquidity_score: float
+        +volatility_score: float
+        +contagion_score: float
+        +overall_score: float
+        +metadata: Dict
+    }
+    
+    class SoftTargetClass <<dataclass>> {
+        +entity_id: str
+        +as_of_date: date
+        +soft_target_class: str
+        +soft_target_score: float
+        +weak_profile: float
+        +instability: float
+        +high_fragility: float
+        +complacent_pricing: float
+    }
+}
+
+' ============= FRAGILITY ALPHA =============
+
+package "prometheus.assessment.fragility" <<Rectangle>> ENGINE_COLOR {
+    
+    class FragilityAlphaEngine {
+        +compute_alpha(entity_id: str, as_of_date: date, horizon_days: int) : float
+        +compute_soft_target_score(entity_id: str, as_of_date: date) : float
+        +generate_trade_ideas(entities: List[str], as_of_date: date) : List[TradeIdea]
+        --
+        -_compute_weak_profile(entity_id: str, as_of_date: date) : float
+        -_compute_complacent_pricing(entity_id: str, as_of_date: date) : float
+        -_combine_signals(profile: float, instability: float, fragility: float, pricing: float) : float
+    }
+    
+    class TradeIdea <<dataclass>> {
+        +entity_id: str
+        +instrument_id: str
+        +direction: str
+        +trade_type: str
+        +expected_payoff: float
+        +confidence: float
+        +rationale: str
+    }
+}
+
+' ============= ASSESSMENT ENGINE =============
+
+package "prometheus.assessment" <<Rectangle>> ENGINE_COLOR {
+    
+    class AssessmentEngine {
+        +score_universe(strategy_id: str, market_id: str, instrument_ids: List[str], as_of_date: date, horizon_days: int) : Dict[str, InstrumentScore]
+        +score_strategy_default(strategy_id: str, market_id: str, as_of_date: date) : Dict[str, InstrumentScore]
+        --
+        -_compute_value_alpha(instrument_id: str, as_of_date: date) : float
+        -_compute_momentum_alpha(instrument_id: str, as_of_date: date) : float
+        -_compute_quality_alpha(instrument_id: str, as_of_date: date) : float
+        -_combine_alphas(alphas: Dict[str, float], regime: RegimeState) : float
+    }
+    
+    class InstrumentScore <<dataclass>> {
+        +instrument_id: str
+        +as_of_date: date
+        +horizon_days: int
+        +expected_return: float
+        +score: float
+        +confidence: float
+        +signal_label: str
+        +alpha_components: Dict[str, float]
+        +metadata: Dict
+    }
+}
+
+' ============= UNIVERSE ENGINE =============
+
+package "prometheus.universe" <<Rectangle>> ENGINE_COLOR {
+    
+    class UniverseEngine {
+        +select(strategy_id: str, market_id: str, as_of_date: date) : Universe
+        +filter_by_liquidity(instruments: List[str], min_volume: float) : List[str]
+        +filter_by_constraints(instruments: List[str], constraints: Dict) : List[str]
+        --
+        -_apply_core_filters(instruments: List[str]) : List[str]
+        -_rank_by_scores(instruments: List[str], scores: Dict) : List[str]
+        -_assign_tiers(ranked: List[str], tier_sizes: Dict) : Dict[str, List[str]]
+    }
+    
+    class Universe <<dataclass>> {
+        +strategy_id: str
+        +market_id: str
+        +as_of_date: date
+        +core: List[str]
+        +satellite: List[str]
+        +watchlist: List[str]
+        +metadata: Dict
+    }
+}
+
+' ============= PORTFOLIO & RISK ENGINE =============
+
+package "prometheus.portfolio" <<Rectangle>> ENGINE_COLOR {
+    
+    class PortfolioEngine {
+        +optimize(strategy_id: str, as_of_date: date, universe: Universe, scores: Dict[str, InstrumentScore]) : Dict[str, float]
+        +compute_risk_report(portfolio_id: str, as_of_date: date) : RiskReport
+        +run_scenario_analysis(portfolio_id: str, scenarios: List[Scenario]) : Dict[str, float]
+        --
+        -_build_optimization_problem(universe: List[str], scores: Dict, constraints: Dict) : OptProblem
+        -_solve_cvxpy(problem: OptProblem) : ndarray
+        -_validate_solution(weights: ndarray, constraints: Dict) : bool
+    }
+    
+    class RiskReport <<dataclass>> {
+        +portfolio_id: str
+        +as_of_date: date
+        +portfolio_value: float
+        +net_exposure: float
+        +gross_exposure: float
+        +leverage: float
+        +risk_metrics: Dict
+        +scenario_pnl: Dict
+        +exposures_by_sector: Dict
+    }
+}
+
+' ============= SYNTHETIC SCENARIO ENGINE =============
+
+package "prometheus.synthetic" <<Rectangle>> ENGINE_COLOR {
+    
+    class ScenarioEngine {
+        +generate_scenarios(scenario_type: str, n_scenarios: int, params: Dict) : ScenarioSet
+        +simulate_paths(instrument_ids: List[str], start_date: date, end_date: date, scenario_set: ScenarioSet) : Dict[str, DataFrame]
+        --
+        -_calibrate_model(historical_returns: DataFrame) : Dict
+        -_sample_shocks(n_scenarios: int, params: Dict) : ndarray
+        -_generate_path(instrument_id: str, shocks: ndarray) : Series
+    }
+    
+    class ScenarioSet <<dataclass>> {
+        +scenario_set_id: str
+        +set_type: str
+        +generated_date: date
+        +n_scenarios: int
+        +params: Dict
+        +metadata: Dict
+    }
+}
+
+' ============= EXECUTION LAYER =============
+
+package "prometheus.execution" <<Rectangle>> EXEC_COLOR {
+    
+    interface BrokerInterface {
+        {abstract} +submit_order(order: Order) : str
+        {abstract} +cancel_order(order_id: str) : bool
+        {abstract} +get_order_status(order_id: str) : OrderStatus
+        {abstract} +get_fills(since: datetime) : List[Fill]
+        {abstract} +get_positions() : Dict[str, Position]
+        {abstract} +get_account_state() : Dict
+        {abstract} +sync()
+    }
+    
+    class LiveBroker {
+        +submit_order(order: Order) : str
+        +cancel_order(order_id: str) : bool
+        +get_positions() : Dict[str, Position]
+        --
+        -_connect_ibkr() : IB
+        -_translate_order(order: Order) : IBOrder
+        -_handle_fill_event(fill: IBFill)
+    }
+    
+    class BacktestBroker {
+        +submit_order(order: Order) : str
+        +process_fills(as_of_date: date)
+        +get_positions() : Dict[str, Position]
+        --
+        -market_simulator: MarketSimulator
+        -time_machine: TimeMachine
+        -pending_orders: List[Order]
+    }
+    
+    class MarketSimulator {
+        +simulate_fill(order: Order, as_of_date: date) : Fill
+        +get_fill_price(order: Order, prices: DataFrame) : float
+        --
+        -_apply_slippage(price: float, order: Order) : float
+        -_check_volume_constraint(order: Order, volume: float) : bool
+    }
+    
+    class TimeMachine {
+        +set_date(as_of_date: date)
+        +get_data(table: str, filters: Dict) : DataFrame
+        +iter_trading_days() : Iterator[date]
+        --
+        -current_date: date
+        -_validate_no_lookahead(requested_date: date)
+    }
+    
+    class OrderPlanner {
+        +plan_orders(current_positions: Dict, target_positions: Dict) : List[Order]
+        --
+        -_compute_deltas(current: Dict, target: Dict) : Dict
+        -_split_large_orders(order: Order, max_size: float) : List[Order]
+    }
+}
+
+' ============= META-ORCHESTRATOR =============
+
+package "prometheus.meta" <<Rectangle>> META_COLOR {
+    
+    class MetaOrchestrator {
+        +engine_performance(engine_name: str, config_id: str, start: date, end: date) : EnginePerformanceReport
+        +compare_configs(engine_name: str, config_ids: List[str], start: date, end: date) : Dict[str, EnginePerformanceReport]
+        +create_experiment(engine_name: str, base_config: str, proposed_config: Dict) : Experiment
+        +experiment_results(experiment_id: str) : ExperimentResult
+        --
+        -_aggregate_decisions(engine: str, config: str, period: Tuple[date, date]) : DataFrame
+        -_compute_metrics(decisions: DataFrame, outcomes: DataFrame) : Dict
+        -_slice_by_regime(decisions: DataFrame, regimes: DataFrame) : Dict[str, DataFrame]
+    }
+    
+    class EnginePerformanceReport <<dataclass>> {
+        +engine_name: str
+        +config_id: str
+        +period_start: date
+        +period_end: date
+        +metrics: Dict[str, float]
+        +by_regime: Dict[str, Dict]
+        +by_market: Dict[str, Dict]
+    }
+    
+    class Experiment <<dataclass>> {
+        +experiment_id: str
+        +engine_name: str
+        +base_config_id: str
+        +proposed_config: Dict
+        +status: str
+        +created_at: datetime
+    }
+}
+
+' ============= ORCHESTRATION =============
+
+package "prometheus.orchestration" <<Rectangle>> META_COLOR {
+    
+    class DAGOrchestrator {
+        +schedule_dag(dag_id: str, market_id: str, trigger: str)
+        +get_dag_status(dag_id: str) : DagStatus
+        +retry_failed_tasks(dag_id: str)
+        --
+        -_build_dag_graph(dag_id: str) : DAG
+        -_check_dependencies(task_id: str) : bool
+        -_execute_task(task_id: str)
+    }
+    
+    class MarketStateMonitor {
+        +get_current_state(market_id: str) : MarketState
+        +wait_for_state(market_id: str, target_state: MarketState, timeout: int)
+        --
+        -_check_session_times(market_id: str, now: datetime) : MarketState
+    }
+}
+
+' ============= RELATIONSHIPS =============
+
+' Core dependencies
+DataReader ..> Database : uses
+FeatureBuilder ..> DataReader : uses
+TextEncoder ..> Config : uses
+NumericWindowEncoder ..> DataReader : uses
+ProfileService ..> DataReader : uses
+ProfileService ..> TextEncoder : uses
+
+' Engine dependencies
+RegimeEngine ..> JointEncoder : uses
+RegimeEngine ..> DataReader : uses
+StabilityEngine ..> ProfileService : uses
+StabilityEngine ..> RegimeEngine : uses
+FragilityAlphaEngine ..> StabilityEngine : uses
+AssessmentEngine ..> RegimeEngine : uses
+AssessmentEngine ..> StabilityEngine : uses
+AssessmentEngine ..> FragilityAlphaEngine : uses
+UniverseEngine ..> AssessmentEngine : uses
+PortfolioEngine ..> UniverseEngine : uses
+PortfolioEngine ..> ScenarioEngine : uses
+
+' Execution dependencies
+OrderPlanner ..> PortfolioEngine : uses
+LiveBroker ..|> BrokerInterface
+BacktestBroker ..|> BrokerInterface
+BacktestBroker ..> MarketSimulator : uses
+BacktestBroker ..> TimeMachine : uses
+
+' Meta dependencies
+MetaOrchestrator ..> Database : uses
+DAGOrchestrator ..> TradingCalendar : uses
+DAGOrchestrator ..> MarketStateMonitor : uses
+
+@enduml

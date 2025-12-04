@@ -1,0 +1,30 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/panels/FragilityPanel.gd" id=1]
+
+[node name="FragilityPanel" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1")
+
+[node name="Background" type="PanelContainer" parent="."]
+layout_mode = 2
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="VBox" type="VBoxContainer" parent="Background"]
+margin_left = 8.0
+margin_top = 8.0
+margin_right = 8.0
+margin_bottom = 8.0
+size_flags_vertical = 3
+
+[node name="Title" type="Label" parent="Background/VBox"]
+text = "Soft Targets & Fragility"
+
+[node name="Body" type="Label" parent="Background/VBox"]
+text = "Fragility panel – soft target tables and entity drill-down TBD."
+autowrap_mode = 2

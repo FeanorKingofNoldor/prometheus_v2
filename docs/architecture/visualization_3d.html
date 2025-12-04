@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prometheus v2 - 3D Architecture Visualization</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Courier New', monospace;
+            color: #0f0;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border: 2px solid #0f0;
+            border-radius: 5px;
+            max-width: 400px;
+            z-index: 100;
+        }
+        #info h1 {
+            margin: 0 0 10px 0;
+            font-size: 20px;
+            color: #0ff;
+        }
+        #info p {
+            margin: 5px 0;
+            font-size: 12px;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border: 2px solid #0f0;
+            border-radius: 5px;
+        }
+        button {
+            background: #000;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 8px 15px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+        }
+        button:hover {
+            background: #0f0;
+            color: #000;
+        }
+        #details {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border: 2px solid #ff0;
+            border-radius: 5px;
+            max-width: 350px;
+            display: none;
+            z-index: 100;
+        }
+        #details h2 {
+            margin: 0 0 10px 0;
+            color: #ff0;
+            font-size: 18px;
+        }
+        .legend {
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-box {
+            width: 15px;
+            height: 15px;
+            border: 1px solid #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h1>🚀 PROMETHEUS V2</h1>
+        <h2 style="color: #0f0; margin: 5px 0;">3D Architecture Visualization</h2>
+        <p><strong>MOUSE:</strong> Left-click + drag to rotate</p>
+        <p><strong>WHEEL:</strong> Zoom in/out</p>
+        <p><strong>CLICK NODE:</strong> View details</p>
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-box" style="background: #ff0000;"></div>
+                <span>Engines</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #00ffff;"></div>
+                <span>Data</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #00ff00;"></div>
+                <span>Core</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="controls">
+        <button onclick="animateDataFlow()">▶ Animate Data Flow</button>
+        <button onclick="resetView()">🔄 Reset View</button>
+        <button onclick="toggleAutoRotate()">🔁 Auto-Rotate</button>
+    </div>
+
+    <div id="details">
+        <h2 id="detailTitle"></h2>
+        <p id="detailDescription"></p>
+        <p id="detailMethods"></p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+        scene.fog = new THREE.Fog(0x000000, 50, 200);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 30, 60);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 2);
+        scene.add(ambientLight);
+
+        const pointLight = new THREE.PointLight(0x00ffff, 2, 100);
+        pointLight.position.set(0, 50, 0);
+        scene.add(pointLight);
+
+        // Architecture nodes
+        const nodes = [];
+        const connections = [];
+        const particles = [];
+
+        // Define architecture components
+        const architecture = {
+            orchestration: { name: 'DAG Orchestrator', pos: [0, 40, 0], color: 0xff00ff, type: 'orchestrator', 
+                description: 'Schedules all jobs based on market state', methods: ['schedule_dag()', 'get_dag_status()'] },
+            
+            // Engines (middle layer)
+            regime: { name: 'Regime Engine', pos: [-30, 20, 0], color: 0xff0000, type: 'engine',
+                description: 'Identifies market regimes (CARRY, CRISIS, etc.)', methods: ['get_regime()', 'get_history()'] },
+            stability: { name: 'Stability Engine', pos: [-15, 20, 0], color: 0xff3300, type: 'engine',
+                description: 'Computes stability vectors and soft-target classes', methods: ['compute_stability()', 'compute_soft_target_class()'] },
+            fragility: { name: 'Fragility Alpha', pos: [0, 20, 0], color: 0xff6600, type: 'engine',
+                description: 'Identifies structurally weak entities', methods: ['compute_alpha()', 'generate_trade_ideas()'] },
+            assessment: { name: 'Assessment Engine', pos: [15, 20, 0], color: 0xff9900, type: 'engine',
+                description: 'Scores instruments across all alpha families', methods: ['score_universe()', 'score_strategy_default()'] },
+            universe: { name: 'Universe Engine', pos: [30, 20, 0], color: 0xffcc00, type: 'engine',
+                description: 'Selects CORE/SATELLITE/WATCHLIST instruments', methods: ['select()', 'filter_by_liquidity()'] },
+            portfolio: { name: 'Portfolio & Risk', pos: [45, 20, 0], color: 0xffff00, type: 'engine',
+                description: 'Optimizes positions under constraints', methods: ['optimize()', 'compute_risk_report()'] },
+
+            // Data layer (bottom)
+            historical_db: { name: 'historical_db', pos: [-30, 0, -15], color: 0x00ffff, type: 'data',
+                description: 'Immutable market data, prices, events', methods: ['13 tables: prices_daily, returns_daily, etc.'] },
+            runtime_db: { name: 'runtime_db', pos: [30, 0, -15], color: 0x00ccff, type: 'data',
+                description: 'Mutable state: decisions, configs, positions', methods: ['24 tables: engine_decisions, orders, etc.'] },
+            encoders: { name: 'Encoders', pos: [0, 0, -15], color: 0x0099ff, type: 'data',
+                description: 'Text, numeric, joint embeddings', methods: ['TextEncoder', 'NumericWindowEncoder', 'JointEncoder'] },
+            
+            // Execution layer
+            execution: { name: 'Execution Layer', pos: [60, 10, 0], color: 0x00ff00, type: 'core',
+                description: 'LIVE/PAPER/BACKTEST broker interfaces', methods: ['LiveBroker', 'BacktestBroker', 'MarketSimulator'] },
+            ibkr: { name: 'IBKR Gateway', pos: [75, 0, 0], color: 0x00ff66, type: 'external',
+                description: 'Interactive Brokers API connection', methods: ['Port 7496 (live), 4001 (paper)'] },
+
+            // Meta layer
+            kronos: { name: 'Kronos (Meta)', pos: [0, 35, 20], color: 0xff00ff, type: 'meta',
+                description: 'Meta-orchestrator analyzing all decisions', methods: ['engine_performance()', 'create_experiment()'] },
+            ui: { name: 'UI & Monitoring', pos: [0, 25, 30], color: 0xff66ff, type: 'meta',
+                description: 'Bloomberg-style dark UI + Kronos Chat', methods: ['WebSocket API', 'Real-time dashboards'] }
+        };
+
+        // Create nodes
+        Object.keys(architecture).forEach(key => {
+            const comp = architecture[key];
+            const geometry = new THREE.BoxGeometry(3, 3, 3);
+            const material = new THREE.MeshPhongMaterial({ 
+                color: comp.color,
+                emissive: comp.color,
+                emissiveIntensity: 0.3,
+                shininess: 100
+            });
+            const cube = new THREE.Mesh(geometry, material);
+            cube.position.set(...comp.pos);
+            cube.userData = { key, ...comp };
+            scene.add(cube);
+            nodes.push(cube);
+
+            // Add label
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 64;
+            context.fillStyle = '#000';
+            context.fillRect(0, 0, 256, 64);
+            context.font = 'Bold 18px Courier';
+            context.fillStyle = '#0f0';
+            context.textAlign = 'center';
+            context.fillText(comp.name, 128, 35);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.position.set(...comp.pos);
+            sprite.position.y += 3;
+            sprite.scale.set(8, 2, 1);
+            scene.add(sprite);
+        });
+
+        // Define connections (data flows)
+        const flows = [
+            ['orchestration', 'regime'],
+            ['orchestration', 'stability'],
+            ['orchestration', 'fragility'],
+            ['orchestration', 'assessment'],
+            ['orchestration', 'universe'],
+            ['orchestration', 'portfolio'],
+            ['regime', 'stability'],
+            ['regime', 'assessment'],
+            ['stability', 'fragility'],
+            ['stability', 'assessment'],
+            ['fragility', 'assessment'],
+            ['assessment', 'universe'],
+            ['universe', 'portfolio'],
+            ['portfolio', 'execution'],
+            ['execution', 'ibkr'],
+            ['historical_db', 'regime'],
+            ['historical_db', 'stability'],
+            ['historical_db', 'encoders'],
+            ['encoders', 'regime'],
+            ['encoders', 'assessment'],
+            ['runtime_db', 'portfolio'],
+            ['runtime_db', 'execution'],
+            ['regime', 'kronos'],
+            ['stability', 'kronos'],
+            ['assessment', 'kronos'],
+            ['portfolio', 'kronos'],
+            ['kronos', 'ui']
+        ];
+
+        // Create connections
+        flows.forEach(([from, to]) => {
+            const fromNode = nodes.find(n => n.userData.key === from);
+            const toNode = nodes.find(n => n.userData.key === to);
+            if (!fromNode || !toNode) return;
+
+            const points = [fromNode.position, toNode.position];
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ 
+                color: 0x00ff00, 
+                opacity: 0.3, 
+                transparent: true 
+            });
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            connections.push({ line, from: fromNode, to: toNode });
+        });
+
+        // Particle system for data flow animation
+        function createParticle(from, to) {
+            const geometry = new THREE.SphereGeometry(0.3, 8, 8);
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0x00ffff,
+                emissive: 0x00ffff,
+                emissiveIntensity: 1
+            });
+            const particle = new THREE.Mesh(geometry, material);
+            particle.position.copy(from.position);
+            particle.userData = { 
+                target: to.position.clone(), 
+                progress: 0,
+                speed: 0.02 + Math.random() * 0.03
+            };
+            scene.add(particle);
+            particles.push(particle);
+        }
+
+        // Animate data flow
+        function animateDataFlow() {
+            flows.forEach(([from, to]) => {
+                const fromNode = nodes.find(n => n.userData.key === from);
+                const toNode = nodes.find(n => n.userData.key === to);
+                if (fromNode && toNode) {
+                    setTimeout(() => createParticle(fromNode, toNode), Math.random() * 2000);
+                }
+            });
+        }
+
+        // Click handling
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        window.addEventListener('click', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(nodes);
+
+            if (intersects.length > 0) {
+                const node = intersects[0].object;
+                showDetails(node.userData);
+            }
+        });
+
+        function showDetails(data) {
+            document.getElementById('detailTitle').textContent = data.name;
+            document.getElementById('detailDescription').textContent = data.description;
+            document.getElementById('detailMethods').innerHTML = '<strong>Methods:</strong><br>' + 
+                data.methods.join('<br>');
+            document.getElementById('details').style.display = 'block';
+
+            // Highlight node
+            nodes.forEach(n => n.material.emissiveIntensity = 0.3);
+            const node = nodes.find(n => n.userData.key === data.key);
+            if (node) node.material.emissiveIntensity = 1;
+        }
+
+        // Controls
+        let autoRotate = false;
+
+        function resetView() {
+            camera.position.set(0, 30, 60);
+            controls.target.set(0, 20, 0);
+        }
+
+        function toggleAutoRotate() {
+            autoRotate = !autoRotate;
+            controls.autoRotate = autoRotate;
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Animate particles
+            particles.forEach((particle, index) => {
+                particle.userData.progress += particle.userData.speed;
+                if (particle.userData.progress >= 1) {
+                    scene.remove(particle);
+                    particles.splice(index, 1);
+                } else {
+                    particle.position.lerpVectors(
+                        particle.position,
+                        particle.userData.target,
+                        particle.userData.progress
+                    );
+                }
+            });
+
+            // Pulse nodes
+            const time = Date.now() * 0.001;
+            nodes.forEach((node, i) => {
+                node.rotation.y += 0.01;
+                node.material.emissiveIntensity = 0.3 + Math.sin(time * 2 + i) * 0.2;
+            });
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start
+        animate();
+        setTimeout(() => animateDataFlow(), 1000);
+        setInterval(() => animateDataFlow(), 10000); // Repeat every 10 seconds
+
+        console.log('🚀 Prometheus v2 3D Visualization Loaded');
+        console.log('📦 Total components:', nodes.length);
+        console.log('🔗 Total connections:', connections.length);
+    </script>
+</body>
+</html>

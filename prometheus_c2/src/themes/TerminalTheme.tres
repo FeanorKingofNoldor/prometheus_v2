@@ -1,0 +1,27 @@
+[gd_resource type="Theme" format=3]
+
+[resource]
+# Base dark theme approximating docs/ui_c2_mock/index.html
+# These values are intentionally conservative; panels can add nuance later.
+
+default_font_size = 12
+
+# Backgrounds
+colors/bg_color = Color(0.02, 0.04, 0.07, 1.0)               # primary background
+colors/panel_bg_color = Color(0.07, 0.09, 0.13, 1.0)         # panel background
+
+# Text
+colors/font_color = Color(0.90, 0.98, 0.91, 1.0)
+colors/font_disabled_color = Color(0.55, 0.70, 0.65, 1.0)
+
+# Accents (good/bad/warning/info)
+colors/accent_good = Color(0.13, 0.77, 0.44, 1.0)
+colors/accent_bad = Color(0.93, 0.30, 0.36, 1.0)
+colors/accent_warning = Color(0.96, 0.61, 0.16, 1.0)
+colors/accent_info = Color(0.05, 0.68, 0.90, 1.0)
+
+# Panel border and gridlines
+colors/border_color = Color(0.18, 0.23, 0.30, 1.0)
+
+# These theme-level colors will be bound to concrete controls in the editor
+# (e.g., Panel, Label, Button) as needed.

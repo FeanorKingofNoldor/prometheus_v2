@@ -1,0 +1,85 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/panels/MetaExperimentsPanel.gd" id=1]
+
+[node name="MetaExperimentsPanel" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1")
+
+[node name="Background" type="PanelContainer" parent="."]
+layout_mode = 2
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="VBox" type="VBoxContainer" parent="Background"]
+margin_left = 8.0
+margin_top = 8.0
+margin_right = 8.0
+margin_bottom = 8.0
+size_flags_vertical = 3
+
+[node name="Title" type="Label" parent="Background/VBox"]
+text = "Meta & Experiments"
+
+[node name="Body" type="Label" parent="Background/VBox"]
+text = "Run backtests and stage config changes via forms or the Terminal."
+autowrap_mode = 2
+
+[node name="RunBacktestLabel" type="Label" parent="Background/VBox"]
+text = "Run backtest (strategy, start, end, markets_csv):"
+
+[node name="RunBacktestHBox" type="HBoxContainer" parent="Background/VBox"]
+custom_minimum_size = Vector2(0, 28)
+
+[node name="StrategyInput" type="LineEdit" parent="Background/VBox/RunBacktestHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+placeholder_text = "Strategy"
+
+[node name="StartDateInput" type="LineEdit" parent="Background/VBox/RunBacktestHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 0)
+placeholder_text = "YYYY-MM-DD"
+
+[node name="EndDateInput" type="LineEdit" parent="Background/VBox/RunBacktestHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 0)
+placeholder_text = "YYYY-MM-DD"
+
+[node name="MarketsInput" type="LineEdit" parent="Background/VBox/RunBacktestHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 0)
+placeholder_text = "markets csv (US_EQ,EU_EQ)"
+
+[node name="RunBacktestButton" type="Button" parent="Background/VBox/RunBacktestHBox"]
+unique_name_in_owner = true
+text = "Run"
+
+[node name="StageConfigLabel" type="Label" parent="Background/VBox"]
+text = "Stage config change (engine.key = value):"
+
+[node name="StageConfigHBox" type="HBoxContainer" parent="Background/VBox"]
+custom_minimum_size = Vector2(0, 28)
+
+[node name="EngineInput" type="LineEdit" parent="Background/VBox/StageConfigHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+placeholder_text = "engine"
+
+[node name="ConfigKeyInput" type="LineEdit" parent="Background/VBox/StageConfigHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 0)
+placeholder_text = "config key"
+
+[node name="ConfigValueInput" type="LineEdit" parent="Background/VBox/StageConfigHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 0)
+placeholder_text = "value"
+
+[node name="StageConfigButton" type="Button" parent="Background/VBox/StageConfigHBox"]
+unique_name_in_owner = true
+text = "Stage"

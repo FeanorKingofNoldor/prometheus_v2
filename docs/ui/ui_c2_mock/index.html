@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Prometheus C2 – UI Mock</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg-primary: #010308;
+      --bg-panel: #020910;
+      --bg-panel-alt: #041017;
+      --fg-primary: #e5f9e7;
+      --fg-muted: #6ee7b7;
+      --accent-good: #4ade80;
+      --accent-bad: #fb7185;
+      --accent-warning: #fbbf24;
+      --accent-info: #22c55e;
+      --border-subtle: #022c22;
+      --border-strong: #22c55e;
+      --shadow-strong: 0 0 30px rgba(34, 197, 94, 0.45);
+      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: var(--bg-primary);
+      background-image:
+        radial-gradient(circle at top, #022c22 0, #020617 40%, #00040a 100%),
+        linear-gradient(rgba(16, 185, 129, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1px, transparent 1px);
+      background-size: cover, 100% 22px, 22px 100%;
+      background-position: center, 0 0, 0 0;
+      color: var(--fg-primary);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top command bar */
+    .c2-topbar {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      background: linear-gradient(90deg, #020617, #02130f 40%, #022c22 100%);
+      border-bottom: 1px solid #064e3b;
+      box-shadow: 0 0 24px rgba(6, 95, 70, 0.95);
+      letter-spacing: 0.04em;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .c2-topbar-left {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .c2-logo {
+      font-size: 13px;
+      text-transform: uppercase;
+      color: var(--accent-info);
+    }
+
+    .c2-logo span {
+      color: var(--accent-good);
+    }
+
+    .c2-topbar-mode {
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+
+    .c2-topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+
+    .c2-kpi-pill {
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      background: radial-gradient(circle at top, rgba(22, 163, 74, 0.22), transparent 60%);
+      color: var(--accent-good);
+    }
+
+    .c2-clock {
+      border-left: 1px solid #1f2937;
+      padding-left: 12px;
+    }
+
+    /* Main layout: left nav + center content + right strip */
+    .c2-main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr) 260px;
+      grid-template-rows: minmax(0, 1fr);
+      background:
+        radial-gradient(circle at 0 0, rgba(16, 185, 129, 0.14), transparent 45%),
+        radial-gradient(circle at 100% 0, rgba(45, 212, 191, 0.12), transparent 45%),
+        radial-gradient(circle at 50% 100%, rgba(52, 211, 153, 0.18), transparent 55%);
+    }
+
+    /* Left sidebar */
+    .c2-nav {
+      border-right: 1px solid var(--border-subtle);
+      background: linear-gradient(180deg, rgba(2, 44, 34, 0.96), #020910 85%);
+      padding: 10px 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .c2-nav-section-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--fg-muted);
+      letter-spacing: 0.12em;
+      margin: 2px 4px 4px;
+    }
+
+    .c2-nav-workspaces,
+    .c2-nav-panels {
+      background: rgba(3, 22, 18, 0.96);
+      border-radius: 10px;
+      border: 1px solid rgba(5, 46, 36, 0.95);
+      padding: 6px 4px;
+      box-shadow: 0 0 20px rgba(15, 23, 42, 0.9);
+    }
+
+    .c2-workspace-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 11px;
+      color: var(--fg-muted);
+      cursor: pointer;
+    }
+
+    .c2-workspace-pill.is-active {
+      border-color: var(--border-strong);
+      color: var(--accent-info);
+      background: radial-gradient(circle at top, rgba(56, 189, 248, 0.16), transparent 60%);
+      box-shadow: var(--shadow-strong);
+    }
+
+    .c2-nav-panel-list {
+      margin-top: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-height: calc(100vh - 170px);
+      overflow-y: auto;
+    }
+
+    .c2-nav-panel-item {
+      border-radius: 7px;
+      padding: 5px 9px;
+      font-size: 11px;
+      color: var(--fg-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+
+    .c2-nav-panel-item:hover {
+      background: rgba(15, 23, 42, 0.85);
+    }
+
+    .c2-nav-panel-item.is-active {
+      border-color: rgba(34, 211, 238, 0.7);
+      color: var(--fg-primary);
+      background: radial-gradient(circle at left, rgba(34, 211, 238, 0.18), transparent 60%);
+    }
+
+    .c2-nav-panel-badge {
+      font-size: 10px;
+      color: var(--accent-warning);
+    }
+
+    /* Center content: top tabs + grid */
+    .c2-center {
+      padding: 10px 12px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .c2-tabbar {
+      display: flex;
+      gap: 8px;
+      font-size: 11px;
+    }
+
+    .c2-tab {
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      color: var(--fg-muted);
+      cursor: pointer;
+      background: rgba(15, 23, 42, 0.5);
+    }
+
+    .c2-tab.is-active {
+      border-color: var(--border-strong);
+      color: var(--accent-info);
+      box-shadow: var(--shadow-strong);
+    }
+
+    .c2-panel-grid {
+      flex: 1;
+      display: grid;
+      grid-template-rows: 1.1fr 1fr;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 8px;
+    }
+
+    .c2-panel-card {
+      background: radial-gradient(circle at top left, rgba(3, 22, 18, 0.98), #020617);
+      border-radius: 12px;
+      border: 1px solid rgba(16, 185, 129, 0.26);
+      box-shadow: 0 0 24px rgba(3, 18, 12, 0.98);
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .c2-panel-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--fg-muted);
+      font-family: var(--font-mono);
+    }
+
+    .c2-panel-card-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .c2-panel-card-title-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--accent-info);
+      box-shadow: 0 0 12px rgba(34, 211, 238, 0.7);
+    }
+
+    .c2-panel-body {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      color: var(--fg-muted);
+      font-size: 11px;
+      border-radius: 9px;
+      border: 1px dashed rgba(55, 65, 81, 0.8);
+      background: radial-gradient(circle at center, rgba(15, 23, 42, 0.7), transparent 70%);
+    }
+
+    .c2-kpi-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .c2-kpi-box {
+      flex: 1;
+      border-radius: 8px;
+      border: 1px solid rgba(31, 41, 55, 0.9);
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.6));
+      padding: 6px 7px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .c2-kpi-label {
+      font-size: 10px;
+      color: var(--fg-muted);
+    }
+
+    .c2-kpi-value {
+      font-size: 13px;
+    }
+
+    .c2-kpi-value.positive { color: var(--accent-good); }
+    .c2-kpi-value.negative { color: var(--accent-bad); }
+
+    .c2-mini-strip {
+      font-size: 9px;
+      color: var(--fg-muted);
+      opacity: 0.9;
+    }
+
+    /* Right side info strip */
+    .c2-right {
+      border-left: 1px solid var(--border-subtle);
+      background: linear-gradient(180deg, #020617, #020617 50%, #020309 100%);
+      padding: 10px 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .c2-right-block {
+      background: rgba(15, 23, 42, 0.95);
+      border-radius: 10px;
+      border: 1px solid rgba(31, 41, 55, 0.9);
+      padding: 7px 8px;
+      box-shadow: 0 0 18px rgba(15, 23, 42, 0.9);
+    }
+
+    .c2-right-title {
+      font-size: 10px;
+      color: var(--fg-muted);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .c2-alert-item {
+      font-size: 11px;
+      padding: 4px 6px;
+      border-radius: 7px;
+      border: 1px solid rgba(127, 29, 29, 0.8);
+      color: #fecaca;
+      background: radial-gradient(circle at left, rgba(248, 113, 113, 0.25), transparent 60%);
+      margin-bottom: 4px;
+    }
+
+    .c2-console {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      height: 120px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid #064e3b;
+      background: radial-gradient(circle at bottom left, rgba(6, 78, 59, 0.65), #010b0f);
+      padding: 5px 6px;
+      color: #bbf7d0;
+      text-shadow: 0 0 6px rgba(34, 197, 94, 0.7);
+    }
+
+    .c2-console-line {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Panel visibility */
+    .c2-panel-screen { display: none; }
+    .c2-panel-screen.is-active { display: block; }
+  </style>
+</head>
+<body>
+  <div class="c2-topbar">
+    <div class="c2-topbar-left">
+      <div class="c2-logo">PROMETHEUS <span>C2</span></div>
+      <div class="c2-topbar-mode">Mode: LIVE · US_EQ · MAIN</div>
+    </div>
+      <div class="c2-topbar-right">
+      <div class="c2-kpi-pill">P&L +1.34% (D)</div>
+      <div>Regime: RECOVERY · System STAB: HIGH</div>
+      <div class="c2-clock">2025-01-02 · 21:31:08 UTC</div>
+    </div>
+  </div>
+
+  <div class="c2-main">
+    <!-- Left navigation -->
+    <aside class="c2-nav">
+      <div class="c2-nav-section-label">Workspaces</div>
+      <div class="c2-nav-workspaces">
+        <div class="c2-workspace-pill is-active">US LIVE</div>
+        <div class="c2-workspace-pill">GLOBAL FRAGILITY</div>
+        <div class="c2-workspace-pill">RESEARCH</div>
+      </div>
+
+      <div class="c2-nav-section-label">Panels</div>
+      <div class="c2-nav-panels">
+        <div class="c2-nav-panel-list" id="panel-nav">
+          <div class="c2-nav-panel-item is-active" data-panel="overview">
+            <span>Overview</span>
+            <span class="c2-nav-panel-badge">FLIGHT DECK</span>
+          </div>
+          <div class="c2-nav-panel-item" data-panel="regime">
+            <span>Regime & Stability</span>
+            <span class="c2-nav-panel-badge">ENGINES</span>
+          </div>
+          <div class="c2-nav-panel-item" data-panel="fragility">
+            <span>Soft Targets</span>
+            <span class="c2-nav-panel-badge">ALPHA</span>
+          </div>
+          <div class="c2-nav-panel-item" data-panel="assessment">
+            <span>Assessment & Universe</span>
+          </div>
+          <div class="c2-nav-panel-item" data-panel="portfolio">
+            <span>Portfolio & Risk</span>
+          </div>
+          <div class="c2-nav-panel-item" data-panel="meta">
+            <span>Meta & Experiments</span>
+          </div>
+          <div class="c2-nav-panel-item" data-panel="live-system">
+            <span>Live System</span>
+          </div>
+          <div class="c2-nav-panel-item" data-panel="anthill">
+            <span>ANT_HILL 3D</span>
+          </div>
+          <div class="c2-nav-panel-item" data-panel="geo">
+            <span>World Map / Globe</span>
+          </div>
+          <div class="c2-nav-panel-item" data-panel="terminal">
+            <span>Terminal</span>
+          </div>
+          <div class="c2-nav-panel-item" data-panel="kronos">
+            <span>Kronos Chat</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center: mock panels -->
+    <main class="c2-center">
+      <div class="c2-tabbar" id="panel-tabs">
+        <div class="c2-tab is-active" data-panel="overview">Overview</div>
+        <div class="c2-tab" data-panel="regime">Regime & Stability</div>
+        <div class="c2-tab" data-panel="portfolio">Portfolio & Risk</div>
+        <div class="c2-tab" data-panel="anthill">ANT_HILL</div>
+      </div>
+
+      <!-- Overview screen -->
+      <section class="c2-panel-screen is-active" data-panel-screen="overview">
+        <div class="c2-panel-grid">
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot"></div>
+                <span>Global KPIs</span>
+              </div>
+              <span class="c2-mini-strip">Today snapshot · mock</span>
+            </div>
+            <div class="c2-panel-body" style="display: flex; flex-direction: column; gap: 6px; padding: 4px;">
+              <div class="c2-kpi-row">
+                <div class="c2-kpi-box">
+                  <div class="c2-kpi-label">Total P&L (D)</div>
+                  <div class="c2-kpi-value positive">+1.34%</div>
+                </div>
+                <div class="c2-kpi-box">
+                  <div class="c2-kpi-label">Max Drawdown (30D)</div>
+                  <div class="c2-kpi-value negative">-3.90%</div>
+                </div>
+              </div>
+              <div class="c2-kpi-row">
+                <div class="c2-kpi-box">
+                  <div class="c2-kpi-label">Gross / Net Exposure</div>
+                  <div class="c2-kpi-value">2.3x / 0.7x</div>
+                </div>
+                <div class="c2-kpi-box">
+                  <div class="c2-kpi-label">System STAB Index</div>
+                  <div class="c2-kpi-value">0.82</div>
+                </div>
+              </div>
+              <div class="c2-panel-body" style="flex: 1; margin-top: 4px;">
+                Regime band timeline placeholder
+              </div>
+            </div>
+          </div>
+
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-warning);"></div>
+                <span>Active Alerts</span>
+              </div>
+              <span class="c2-mini-strip">Mock feed</span>
+            </div>
+            <div class="c2-panel-body">
+              Alerts panel placeholder
+            </div>
+          </div>
+
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-good);"></div>
+                <span>Regime & STAB Overview</span>
+              </div>
+              <span class="c2-mini-strip">Entity STAB aggregates by region</span>
+            </div>
+            <div class="c2-panel-body">
+              Heatmap / regime tiles placeholder
+            </div>
+          </div>
+
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-info);"></div>
+                <span>Portfolio Summary</span>
+              </div>
+              <span class="c2-mini-strip">Top portfolios</span>
+            </div>
+            <div class="c2-panel-body">
+              Portfolio grid / mini charts placeholder
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Regime & Stability screen -->
+      <section class="c2-panel-screen" data-panel-screen="regime">
+        <div class="c2-panel-grid">
+          <div class="c2-panel-card" style="grid-column: span 2;">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-info);"></div>
+                <span>Regime Band Timeline</span>
+              </div>
+              <span class="c2-mini-strip">Europe · US · Japan</span>
+            </div>
+            <div class="c2-panel-body">
+              Regime timeline & scrubber placeholder
+            </div>
+          </div>
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-warning);"></div>
+                <span>STAB Components</span>
+              </div>
+              <span class="c2-mini-strip">Liquidity · Vol · Contagion (entity-level)</span>
+            </div>
+            <div class="c2-panel-body">
+              Gauges / radar chart placeholder
+            </div>
+          </div>
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-good);"></div>
+                <span>Drivers & Events</span>
+              </div>
+              <span class="c2-mini-strip">Macro & factors</span>
+            </div>
+            <div class="c2-panel-body">
+              List of key drivers placeholder
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Portfolio & Risk screen -->
+      <section class="c2-panel-screen" data-panel-screen="portfolio">
+        <div class="c2-panel-grid">
+          <div class="c2-panel-card" style="grid-column: span 2;">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-good);"></div>
+                <span>Positions & P&L</span>
+              </div>
+              <span class="c2-mini-strip">Main portfolio snapshot</span>
+            </div>
+            <div class="c2-panel-body">
+              Positions table / heatmap placeholder
+            </div>
+          </div>
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-info);"></div>
+                <span>Exposure Breakdown</span>
+              </div>
+              <span class="c2-mini-strip">Sector · Country · Factor</span>
+            </div>
+            <div class="c2-panel-body">
+              Donut / bar charts placeholder
+            </div>
+          </div>
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-warning);"></div>
+                <span>Scenario Tester</span>
+              </div>
+              <span class="c2-mini-strip">Stress scenarios</span>
+            </div>
+            <div class="c2-panel-body">
+              Scenario selector & P&L distribution placeholder
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ANT_HILL mock screen -->
+      <section class="c2-panel-screen" data-panel-screen="anthill">
+        <div class="c2-panel-grid" style="grid-template-columns: 1.5fr 1fr; grid-template-rows: 1fr 0.9fr;">
+          <div class="c2-panel-card" style="grid-row: span 2;">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-info);"></div>
+                <span>ANT_HILL 3D View</span>
+              </div>
+              <span class="c2-mini-strip">Read-only visualization</span>
+            </div>
+            <div class="c2-panel-body">
+              3D scene placeholder (architecture / pipelines)
+            </div>
+          </div>
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-warning);"></div>
+                <span>Trace Controls</span>
+              </div>
+              <span class="c2-mini-strip">Play · Pause · Step · Speed</span>
+            </div>
+            <div class="c2-panel-body">
+              Trace playback controls placeholder
+            </div>
+          </div>
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header">
+              <div class="c2-panel-card-title">
+                <div class="c2-panel-card-title-dot" style="background: var(--accent-info);"></div>
+                <span>Selection Details</span>
+              </div>
+              <span class="c2-mini-strip">Node / packet details</span>
+            </div>
+            <div class="c2-panel-body">
+              Details of selected object placeholder
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Other panels: simple placeholders for now -->
+      <section class="c2-panel-screen" data-panel-screen="fragility">
+        <div class="c2-panel-grid">
+          <div class="c2-panel-card" style="grid-column: span 2;">
+            <div class="c2-panel-card-header"><div class="c2-panel-card-title"><div class="c2-panel-card-title-dot" style="background: var(--accent-warning);"></div><span>Soft Targets & Fragility</span></div></div>
+            <div class="c2-panel-body">Soft target table and detail mock</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="c2-panel-screen" data-panel-screen="assessment">
+        <div class="c2-panel-grid">
+          <div class="c2-panel-card" style="grid-column: span 2;">
+            <div class="c2-panel-card-header"><div class="c2-panel-card-title"><div class="c2-panel-card-title-dot"></div><span>Assessment & Universe</span></div></div>
+            <div class="c2-panel-body">Universe membership & scores mock</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="c2-panel-screen" data-panel-screen="meta">
+        <div class="c2-panel-grid">
+          <div class="c2-panel-card" style="grid-column: span 2;">
+            <div class="c2-panel-card-header"><div class="c2-panel-card-title"><div class="c2-panel-card-title-dot"></div><span>Meta & Experiments</span></div></div>
+            <div class="c2-panel-body">Config/performance dashboard mock</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="c2-panel-screen" data-panel-screen="live-system">
+        <div class="c2-panel-grid">
+          <div class="c2-panel-card" style="grid-column: span 2;">
+            <div class="c2-panel-card-header"><div class="c2-panel-card-title"><div class="c2-panel-card-title-dot"></div><span>Live System View</span></div></div>
+            <div class="c2-panel-body">Pipeline timeline & task list mock</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="c2-panel-screen" data-panel-screen="geo">
+        <div class="c2-panel-grid">
+          <div class="c2-panel-card" style="grid-column: span 2;">
+            <div class="c2-panel-card-header"><div class="c2-panel-card-title"><div class="c2-panel-card-title-dot"></div><span>World Map / Globe</span></div></div>
+            <div class="c2-panel-body">2D map / 3D globe mock</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="c2-panel-screen" data-panel-screen="terminal">
+        <div class="c2-panel-grid" style="grid-template-columns: 1fr; grid-template-rows: 1fr 0.8fr;">
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header"><div class="c2-panel-card-title"><div class="c2-panel-card-title-dot"></div><span>Terminal</span></div></div>
+            <div class="c2-panel-body">Command line mock</div>
+          </div>
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header"><div class="c2-panel-card-title"><div class="c2-panel-card-title-dot"></div><span>Recent Jobs</span></div></div>
+            <div class="c2-panel-body">Job list mock</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="c2-panel-screen" data-panel-screen="kronos">
+        <div class="c2-panel-grid" style="grid-template-columns: 1.3fr 1fr;">
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header"><div class="c2-panel-card-title"><div class="c2-panel-card-title-dot"></div><span>Kronos Chat</span></div></div>
+            <div class="c2-panel-body">Chat transcript mock</div>
+          </div>
+          <div class="c2-panel-card">
+            <div class="c2-panel-card-header"><div class="c2-panel-card-title"><div class="c2-panel-card-title-dot"></div><span>Proposals</span></div></div>
+            <div class="c2-panel-body">Config/experiment proposal mock</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Right strip: alerts + console mock -->
+    <aside class="c2-right">
+      <div class="c2-right-block">
+        <div class="c2-right-title">Alerts</div>
+        <div class="c2-alert-item">[CRITICAL] US_EQ ingestion delayed vs SLO · T+1</div>
+        <div class="c2-alert-item" style="border-color: rgba(234,179,8,0.8); background: radial-gradient(circle at left, rgba(234,179,8,0.28), transparent 60%); color: #fef9c3;">[WARN] EU_EQ stability index falling</div>
+      </div>
+      <div class="c2-right-block">
+        <div class="c2-right-title">System Console</div>
+        <div class="c2-console">
+          <div class="c2-console-line">[21:31:02] DAG us_eq_ingest_T completed · 00:01:23</div>
+          <div class="c2-console-line">[21:31:04] DAG us_eq_profiles_T completed · 00:00:18</div>
+          <div class="c2-console-line">[21:31:05] DAG us_eq_engines_T running · RegimeEngine → StabilityEngine</div>
+          <div class="c2-console-line">[21:31:07] [INFO] Kronos: monitoring AssessmentEngine cfg_assessment_v12</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    (function () {
+      const navItems = Array.from(document.querySelectorAll('.c2-nav-panel-item'));
+      const tabs = Array.from(document.querySelectorAll('.c2-tab'));
+      const screens = Array.from(document.querySelectorAll('.c2-panel-screen'));
+
+      function activatePanel(panelId) {
+        navItems.forEach((el) => {
+          el.classList.toggle('is-active', el.dataset.panel === panelId);
+        });
+        tabs.forEach((el) => {
+          el.classList.toggle('is-active', el.dataset.panel === panelId);
+        });
+        screens.forEach((el) => {
+          el.classList.toggle('is-active', el.dataset.panelScreen === panelId);
+        });
+      }
+
+      navItems.forEach((el) => {
+        el.addEventListener('click', () => activatePanel(el.dataset.panel));
+      });
+
+      tabs.forEach((el) => {
+        el.addEventListener('click', () => activatePanel(el.dataset.panel));
+      });
+    })();
+  </script>
+</body>
+</html>

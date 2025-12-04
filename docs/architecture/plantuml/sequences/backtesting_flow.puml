@@ -1,0 +1,202 @@
+@startuml Backtesting Flow
+
+title Prometheus v2 - Backtesting Flow with TimeMachine
+
+actor User
+participant "BacktestRunner" as Runner
+participant "TimeMachine" as TM
+participant "RegimeEngine" as Regime
+participant "StabilityEngine" as Stab
+participant "AssessmentEngine" as Assess
+participant "UniverseEngine" as Univ
+participant "PortfolioEngine" as Port
+participant "OrderPlanner" as Planner
+participant "BacktestBroker" as Broker
+participant "MarketSimulator" as Sim
+database "historical_db" as HDB
+
+== Backtest Initialization ==
+
+User -> Runner: run_backtest(\n  start=2020-01-01,\n  end=2023-12-31,\n  strategy="main",\n  initial_cash=1M\n)
+activate Runner
+
+Runner -> TM: __init__(start_date, end_date)
+activate TM
+TM -> TM: _load_trading_calendar()
+TM -> TM: current_date = start_date
+return TimeMachine initialized
+
+Runner -> Broker: __init__(time_machine=TM, initial_cash=1M)
+activate Broker
+Broker -> Broker: portfolio_value = initial_cash
+Broker -> Broker: positions = {}
+Broker -> Broker: pending_orders = []
+return BacktestBroker initialized
+
+== Main Backtest Loop ==
+
+loop for each trading day in [2020-01-01, 2023-12-31]
+    
+    Runner -> TM: set_date(current_date)
+    activate TM
+    TM -> TM: current_date = date
+    TM -> TM: _validate_no_lookahead()
+    return OK
+    
+    note right: All subsequent data access\nis gated by TimeMachine.\nNo future data accessible!
+    
+    ' === Regime Engine ===
+    Runner -> Regime: get_regime(as_of_date=current_date, region="US")
+    activate Regime
+    
+    Regime -> TM: get_data("prices_daily", filters={...})
+    activate TM
+    TM -> TM: _check_date_constraint(current_date)
+    TM -> HDB: SELECT * FROM prices_daily\n  WHERE date <= current_date
+    return DataFrame (time-gated)
+    deactivate TM
+    
+    Regime -> Regime: embed_regime_window(...)
+    Regime -> Regime: classify_regime(embedding)
+    return RegimeState
+    
+    deactivate Regime
+    
+    ' === Stability Engine ===
+    Runner -> Stab: compute_stability_batch(entities, current_date)
+    activate Stab
+    
+    Stab -> TM: get_data("profiles", filters={...})
+    TM -> HDB: SELECT * FROM profiles\n  WHERE as_of_date <= current_date
+    return List[ProfileSnapshot]
+    
+    Stab -> Stab: _compute_liquidity_score(...)
+    Stab -> Stab: _compute_volatility_score(...)
+    return Dict[entity_id, StabilityVector]
+    
+    deactivate Stab
+    
+    ' === Assessment Engine ===
+    Runner -> Assess: score_strategy_default("main", "US_EQ", current_date)
+    activate Assess
+    
+    Assess -> TM: get_data("returns_daily", filters={...})
+    TM -> HDB: SELECT * FROM returns_daily\n  WHERE date <= current_date
+    return DataFrame
+    
+    Assess -> Assess: _compute_value_alpha(...)
+    Assess -> Assess: _compute_momentum_alpha(...)
+    Assess -> Assess: _combine_alphas(...)
+    return Dict[instrument_id, InstrumentScore]
+    
+    deactivate Assess
+    
+    ' === Universe Selection ===
+    Runner -> Univ: select("main", "US_EQ", current_date)
+    activate Univ
+    
+    Univ -> Assess: get_scores("main", "US_EQ", current_date)
+    return Dict[instrument_id, InstrumentScore]
+    
+    Univ -> Univ: filter_by_liquidity(...)
+    Univ -> Univ: _assign_tiers(...)
+    return Universe(core, satellite, watchlist)
+    
+    deactivate Univ
+    
+    ' === Portfolio Optimization ===
+    Runner -> Port: optimize("main", current_date, universe, scores)
+    activate Port
+    
+    Port -> TM: get_data("correlation_panels", filters={...})
+    TM -> HDB: SELECT * FROM correlation_panels\n  WHERE end_date <= current_date
+    return correlation_matrix
+    
+    Port -> Port: _build_optimization_problem(...)
+    Port -> Port: _solve_cvxpy(problem)
+    return Dict[instrument_id, target_weight]
+    
+    deactivate Port
+    
+    ' === Order Planning ===
+    Runner -> Planner: plan_orders(current_positions, target_positions)
+    activate Planner
+    
+    Planner -> Broker: get_positions()
+    return Dict[instrument_id, Position]
+    
+    Planner -> Planner: _compute_deltas(current, target)
+    return List[Order]
+    
+    deactivate Planner
+    
+    ' === Order Submission (Backtest) ===
+    loop for each order
+        Runner -> Broker: submit_order(order)
+        activate Broker
+        
+        Broker -> Broker: pending_orders.append(order)
+        Broker -> Broker: log_order_to_memory()
+        
+        return order_id
+        
+        deactivate Broker
+    end
+    
+    ' === End-of-Day Fill Processing ===
+    Runner -> Broker: process_fills(current_date)
+    activate Broker
+    
+    loop for each pending order
+        Broker -> Sim: simulate_fill(order, current_date)
+        activate Sim
+        
+        Sim -> TM: get_data("prices_daily", {instrument_id, date=current_date})
+        TM -> HDB: SELECT * FROM prices_daily\n  WHERE instrument_id=... AND date=current_date
+        return price_data
+        
+        Sim -> Sim: _apply_slippage(close_price, order)
+        Sim -> Sim: _check_volume_constraint(order, volume)
+        
+        Sim -> Sim: fill_price = close * (1 + slippage_bps/10000)
+        Sim -> Sim: fill_qty = order.quantity\n  (or partial if volume constraint)
+        
+        return Fill(price=fill_price, qty=fill_qty)
+        
+        deactivate Sim
+        
+        Broker -> Broker: update_positions(fill)
+        Broker -> Broker: update_cash(fill.price * fill.qty)
+        Broker -> Broker: log_fill_to_memory()
+    end
+    
+    Broker -> Broker: pending_orders.clear()
+    return fills_processed
+    
+    deactivate Broker
+    
+    ' === Log Snapshot ===
+    Runner -> Runner: log_snapshot(\n  date=current_date,\n  portfolio_value=broker.get_account_state(),\n  positions=broker.get_positions()\n)
+    
+    ' === Advance to Next Day ===
+    Runner -> TM: advance_to_next_trading_day()
+    TM -> TM: current_date = next_trading_day(current_date)
+    return new_date
+    
+    note right: Loop continues...\nTimeMachine ensures no look-ahead\nat every data access
+    
+end
+
+== Backtest Completion & Analysis ==
+
+Runner -> Runner: compute_performance_metrics(\n  snapshots,\n  fills,\n  decisions\n)
+
+Runner -> Runner: generate_report(\n  total_return,\n  sharpe_ratio,\n  max_drawdown,\n  turnover,\n  regime_breakdown\n)
+
+return BacktestResult
+
+deactivate Runner
+
+User -> User: Analyze results,\nadjust configs,\nrun new experiments
+
+@enduml

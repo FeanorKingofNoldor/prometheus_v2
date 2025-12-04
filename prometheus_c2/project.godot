@@ -1,0 +1,41 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Prometheus C2"
+config/description="Prometheus v2 Command & Control Terminal"
+run/main_scene="res://src/ui/MainShell.tscn"
+config/features=PackedStringArray("4.3", "GL Compatibility")
+config/icon="res://assets/icons/icon.svg"
+
+[autoload]
+
+C2Logger="*res://src/core/C2Logger.gd"
+AppState="*res://src/core/AppState.gd"
+ApiClient="*res://src/net/ApiClient.gd"
+CommandBus="*res://src/core/CommandBus.gd"
+WorkspaceManager="*res://src/core/WorkspaceManager.gd"
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/mode=2
+window/size/resizable=true
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0
+environment/defaults/default_clear_color=Color(0.00392157, 0.0117647, 0.0313726, 1)

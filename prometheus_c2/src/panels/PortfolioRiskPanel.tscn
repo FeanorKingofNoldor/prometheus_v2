@@ -1,0 +1,45 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/panels/PortfolioRiskPanel.gd" id=1]
+
+[node name="PortfolioRiskPanel" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1")
+
+[node name="Background" type="PanelContainer" parent="."]
+layout_mode = 2
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="VBox" type="VBoxContainer" parent="Background"]
+margin_left = 8.0
+margin_top = 8.0
+margin_right = 8.0
+margin_bottom = 8.0
+size_flags_vertical = 3
+
+[node name="Title" type="Label" parent="Background/VBox"]
+text = "Portfolio & Risk"
+
+[node name="Body" type="Label" parent="Background/VBox"]
+text = "Portfolio snapshot and risk summary from monitoring APIs."
+autowrap_mode = 2
+
+[node name="RiskConfigLabel" type="Label" parent="Background/VBox"]
+text = "Stage risk config change (max_leverage):"
+
+[node name="RiskConfigHBox" type="HBoxContainer" parent="Background/VBox"]
+custom_minimum_size = Vector2(0, 28)
+
+[node name="MaxLevInput" type="LineEdit" parent="Background/VBox/RiskConfigHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+placeholder_text = "e.g. 2.0"
+
+[node name="StageRiskConfigButton" type="Button" parent="Background/VBox/RiskConfigHBox"]
+unique_name_in_owner = true
+text = "Stage"

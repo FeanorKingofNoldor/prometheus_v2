@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily trigger for Prometheus v2 execution service
+
+[Timer]
+# Adjust OnCalendar to run shortly after BOOKS/targets are ready.
+# Example: run at 16:15 local time on trading days.
+OnCalendar=Mon..Fri 16:15
+Persistent=true
+Unit=prometheus-execution.service
+
+[Install]
+WantedBy=timers.target
