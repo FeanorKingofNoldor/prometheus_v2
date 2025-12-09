@@ -19,14 +19,39 @@ import argparse
 from datetime import date
 from typing import List, Optional, Sequence
 
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 from prometheus.core.config import get_config
 from prometheus.core.database import DatabaseManager
 from prometheus.core.logging import get_logger
 from prometheus.core.time import TradingCalendar
 from prometheus.backtest import SleeveConfig, run_backtest_campaign
+from prometheus.backtest.campaign import _run_backtest_for_sleeve
 
 
 logger = get_logger(__name__)
+
+
+def _worker(args_tuple: tuple[str, date, date, SleeveConfig, float, bool]) -> "SleeveRunSummary":
+    """Worker function to run a single sleeve in a separate process.
+
+    Defined at module top level so it is picklable by multiprocessing.
+    """
+    market_id, start, end, cfg, initial_cash, apply_risk_flag = args_tuple
+    local_config = get_config()
+    local_db_manager = DatabaseManager(local_config)
+    local_calendar = TradingCalendar()
+    return _run_backtest_for_sleeve(
+        db_manager=local_db_manager,
+        calendar=local_calendar,
+        market_id=market_id,
+        start_date=start,
+        end_date=end,
+        cfg=cfg,
+        initial_cash=initial_cash,
+        apply_risk=apply_risk_flag,
+        lambda_provider=None,
+    )
 
 
 def _parse_date(value: str) -> date:
@@ -140,11 +165,22 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             "backend, assessment-context-v1 for context backend)."
         ),
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=1,
+        help=(
+            "Maximum number of worker processes to use when running multiple "
+            "sleeves (default: 1 = serial)."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
     if args.end < args.start:
         parser.error("--end must be >= --start")
+    if args.max_workers <= 0:
+        parser.error("--max-workers must be positive")
 
     sleeve_configs: List[SleeveConfig] = []
     for raw in args.sleeves:
@@ -158,19 +194,46 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         sleeve_configs.append(cfg)
 
     config = get_config()
-    db_manager = DatabaseManager(config)
-    calendar = TradingCalendar()
 
-    summaries = run_backtest_campaign(
-        db_manager=db_manager,
-        calendar=calendar,
-        market_id=args.market_id,
-        start_date=args.start,
-        end_date=args.end,
-        sleeve_configs=sleeve_configs,
-        initial_cash=args.initial_cash,
-        apply_risk=not args.disable_risk,
-    )
+    # Serial path (existing behaviour) when max_workers == 1 or only one sleeve.
+    if args.max_workers == 1 or len(sleeve_configs) == 1:
+        db_manager = DatabaseManager(config)
+        calendar = TradingCalendar()
+        summaries = run_backtest_campaign(
+            db_manager=db_manager,
+            calendar=calendar,
+            market_id=args.market_id,
+            start_date=args.start,
+            end_date=args.end,
+            sleeve_configs=sleeve_configs,
+            initial_cash=args.initial_cash,
+            apply_risk=not args.disable_risk,
+        )
+    else:
+        # Parallel path: run each sleeve in its own worker process.
+        tasks: List[tuple[str, date, date, SleeveConfig, float, bool]] = []
+        for cfg in sleeve_configs:
+            tasks.append(
+                (
+                    args.market_id,
+                    args.start,
+                    args.end,
+                    cfg,
+                    args.initial_cash,
+                    not args.disable_risk,
+                )
+            )
+
+        summaries = []
+        with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
+            futures = {executor.submit(_worker, t): t for t in tasks}
+            for fut in as_completed(futures):
+                summaries.append(fut.result())
+
+        # Preserve original sleeve order by sorting summaries according to
+        # the order of sleeve_ids in sleeve_configs.
+        order = {cfg.sleeve_id: idx for idx, cfg in enumerate(sleeve_configs)}
+        summaries.sort(key=lambda s: order.get(s.sleeve_id, 0))
 
     if not summaries:
         print("No sleeves were run (empty sleeve list)")

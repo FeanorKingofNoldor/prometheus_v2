@@ -46,6 +46,100 @@ class SleeveRunSummary:
     metrics: Dict[str, float]
 
 
+def _run_backtest_for_sleeve(
+    db_manager: DatabaseManager,
+    calendar: TradingCalendar,
+    market_id: str,
+    start_date: date,
+    end_date: date,
+    cfg: SleeveConfig,
+    initial_cash: float,
+    *,
+    apply_risk: bool = True,
+    lambda_provider: object | None = None,
+) -> SleeveRunSummary:
+    """Run a single sleeve backtest and return its summary.
+
+    This helper encapsulates the per-sleeve environment construction and
+    orchestration used by :func:`run_backtest_campaign` and can also be
+    used from parallel workers in CLI code.
+    """
+
+    logger.info(
+        "run_backtest_campaign: running sleeve_id=%s strategy_id=%s market_id=%s start=%s end=%s",
+        cfg.sleeve_id,
+        cfg.strategy_id,
+        market_id,
+        start_date,
+        end_date,
+    )
+
+    reader = DataReader(db_manager=db_manager)
+
+    time_machine = TimeMachine(
+        start_date=start_date,
+        end_date=end_date,
+        market=market_id,
+        data_reader=reader,
+        calendar=calendar,
+        strict_mode=True,
+    )
+
+    simulator = MarketSimulator(
+        time_machine=time_machine,
+        initial_cash=initial_cash,
+        fill_config=FillConfig(market_slippage_bps=0.0),
+    )
+    broker = BacktestBroker(time_machine=time_machine, simulator=simulator)
+
+    target_fn, exposure_fn = build_basic_sleeve_target_and_exposure_fns(
+        db_manager=db_manager,
+        calendar=calendar,
+        config=cfg,
+        broker=broker,
+        apply_risk=apply_risk,
+        lambda_provider=lambda_provider,
+    )
+
+    analyzer = EquityCurveAnalyzer(trading_days_per_year=252)
+    runner = BacktestRunner(
+        db_manager=db_manager,
+        broker=broker,
+        equity_analyzer=analyzer,
+        target_positions_fn=target_fn,
+        exposure_metrics_fn=exposure_fn,
+    )
+
+    run_id = runner.run_sleeve(cfg, start_date, end_date)
+
+    # Load the metrics_json we just wrote so callers can inspect results
+    # without hitting the DB themselves.
+    with db_manager.get_runtime_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT metrics_json
+                FROM backtest_runs
+                WHERE run_id = %s
+                """,
+                (run_id,),
+            )
+            row = cursor.fetchone()
+            metrics = row[0] if row is not None and row[0] is not None else {}
+        finally:
+            cursor.close()
+
+    return SleeveRunSummary(
+        run_id=run_id,
+        sleeve_id=cfg.sleeve_id,
+        strategy_id=cfg.strategy_id,
+        start_date=start_date,
+        end_date=end_date,
+        metrics=metrics,
+    )
+
+
 def run_backtest_campaign(
     db_manager: DatabaseManager,
     calendar: TradingCalendar,
@@ -85,82 +179,20 @@ def run_backtest_campaign(
     if not sleeve_configs:
         return []
 
-    reader = DataReader(db_manager=db_manager)
     summaries: List[SleeveRunSummary] = []
 
     for cfg in sleeve_configs:
-        logger.info(
-            "run_backtest_campaign: running sleeve_id=%s strategy_id=%s market_id=%s start=%s end=%s",
-            cfg.sleeve_id,
-            cfg.strategy_id,
-            market_id,
-            start_date,
-            end_date,
-        )
-
-        time_machine = TimeMachine(
-            start_date=start_date,
-            end_date=end_date,
-            market=market_id,
-            data_reader=reader,
-            calendar=calendar,
-            strict_mode=True,
-        )
-
-        simulator = MarketSimulator(
-            time_machine=time_machine,
-            initial_cash=initial_cash,
-            fill_config=FillConfig(market_slippage_bps=0.0),
-        )
-        broker = BacktestBroker(time_machine=time_machine, simulator=simulator)
-
-        target_fn, exposure_fn = build_basic_sleeve_target_and_exposure_fns(
+        summary = _run_backtest_for_sleeve(
             db_manager=db_manager,
             calendar=calendar,
-            config=cfg,
-            broker=broker,
+            market_id=market_id,
+            start_date=start_date,
+            end_date=end_date,
+            cfg=cfg,
+            initial_cash=initial_cash,
             apply_risk=apply_risk,
             lambda_provider=lambda_provider,
         )
-
-        analyzer = EquityCurveAnalyzer(trading_days_per_year=252)
-        runner = BacktestRunner(
-            db_manager=db_manager,
-            broker=broker,
-            equity_analyzer=analyzer,
-            target_positions_fn=target_fn,
-            exposure_metrics_fn=exposure_fn,
-        )
-
-        run_id = runner.run_sleeve(cfg, start_date, end_date)
-
-        # Load the metrics_json we just wrote so callers can inspect
-        # results without hitting the DB themselves.
-        with db_manager.get_runtime_connection() as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute(
-                    """
-                    SELECT metrics_json
-                    FROM backtest_runs
-                    WHERE run_id = %s
-                    """,
-                    (run_id,),
-                )
-                row = cursor.fetchone()
-                metrics = row[0] if row is not None and row[0] is not None else {}
-            finally:
-                cursor.close()
-
-        summaries.append(
-            SleeveRunSummary(
-                run_id=run_id,
-                sleeve_id=cfg.sleeve_id,
-                strategy_id=cfg.strategy_id,
-                start_date=start_date,
-                end_date=end_date,
-                metrics=metrics,
-            )
-        )
+        summaries.append(summary)
 
     return summaries

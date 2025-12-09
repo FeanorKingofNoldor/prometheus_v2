@@ -88,9 +88,28 @@ class BacktestRunner:
         peak_equity: float | None = None
         last_fill_ts: datetime | None = None
 
+        # Coarse progress tracking over the requested backtest window using
+        # calendar days. This provides an approximate sense of completion
+        # without requiring a separate pass over trading days.
+        total_days = max((end_date - start_date).days + 1, 1)
+        last_reported_pct = -1
+
         for as_of in time_machine.iter_trading_days():
             if as_of < start_date or as_of > end_date:
                 continue
+
+            # Log progress every 5% of the calendar window.
+            elapsed_days = (as_of - start_date).days + 1
+            pct = int(elapsed_days * 100 / total_days)
+            if pct != last_reported_pct and pct % 5 == 0:
+                logger.info(
+                    "BacktestRunner.run_sleeve progress: sleeve=%s strategy=%s as_of=%s %d%%",
+                    config.sleeve_id,
+                    config.strategy_id,
+                    as_of,
+                    pct,
+                )
+                last_reported_pct = pct
 
             # Advance the TimeMachine and synchronise broker state.
             time_machine.set_date(as_of)

@@ -179,6 +179,18 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         help="Number of monthly snapshots to backfill (default: 1, only the as-of date)",
     )
     parser.add_argument(
+        "--start-date",
+        type=_parse_date,
+        default=None,
+        help="Start date for daily backfill (YYYY-MM-DD). Use with --end-date for full date range.",
+    )
+    parser.add_argument(
+        "--end-date",
+        type=_parse_date,
+        default=None,
+        help="End date for daily backfill (YYYY-MM-DD). Use with --start-date for full date range.",
+    )
+    parser.add_argument(
         "--window-days",
         type=int,
         default=63,
@@ -211,15 +223,22 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     
     db_manager = get_db_manager()
     
-    # Determine as-of date(s)
-    if args.as_of:
+    # Determine target dates
+    if args.start_date and args.end_date:
+        # Daily backfill mode: get all trading days in range
+        logger.info("Daily backfill mode: %s to %s", args.start_date, args.end_date)
+        calendar = TradingCalendar(TradingCalendarConfig(market=args.market))
+        target_dates = calendar.get_trading_days_between(args.start_date, args.end_date)
+        target_dates = [d for d in target_dates]  # Convert to list
+    elif args.as_of:
+        # Monthly snapshot mode from specific date
         latest_date = args.as_of
+        target_dates = _generate_monthly_dates(latest_date, args.temporal_snapshots)
     else:
+        # Monthly snapshot mode from latest price date
         latest_date = _get_latest_price_date(db_manager)
         logger.info("Using latest price date: %s", latest_date)
-    
-    # Generate target dates
-    target_dates = _generate_monthly_dates(latest_date, args.temporal_snapshots)
+        target_dates = _generate_monthly_dates(latest_date, args.temporal_snapshots)
     
     # Load all instruments with prices
     all_instruments = _load_all_instruments_with_prices(db_manager)
